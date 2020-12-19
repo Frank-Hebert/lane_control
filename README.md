@@ -9,7 +9,7 @@ dts exercises build
 dts exercises test --duckiebot_name ![ROBOT_NAME] --local --pull
 ```
 
-Then, open your browser and go to your local host adresse (http://localhost:8087/). From this NoVNC environement, launch the joystick controller and press "A" to activate the following procedure.
+Then, open your browser and go to your local host address (http://localhost:8087/). From this NoVNC environement, launch the joystick controller and press "A" to activate the following and parking procedure.
 
 
 **Expected behavior :**
