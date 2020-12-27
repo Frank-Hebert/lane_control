@@ -6,6 +6,7 @@ from cv_bridge import CvBridge
 from duckietown.dtros import DTROS, DTParam, NodeType, ParamType, TopicType
 from duckietown_msgs.msg import Twist2DStamped, WheelEncoderStamped
 from image_geometry import PinholeCameraModel
+from lane_controller.controller import PurePursuitLaneController
 from sensor_msgs.msg import CameraInfo, CompressedImage
 
 from visual_servo.control import Trajectory
@@ -79,7 +80,12 @@ class LaneControllerNode(DTROS):
                                             width=rospy.get_param("~circle_pattern_width"),
                                             target_distance=rospy.get_param("~target_dist"),
                                             )
-        self.trajectory = Trajectory()
+
+        self.trajectory = Trajectory(distance_threshold= rospy.get_param("~distance_threshold"),
+                                     final_angle_threshold = rospy.get_param("~final_angle_threshold"),
+                                     distance_wheel = rospy.get_param("~distance_wheel"),
+                                     wheel_radius = rospy.get_param("~wheel_radius"),
+                                     target_dist = rospy.get_param("~target_dist"))
 
     def cb_process_left_encoder(self, left_encoder_msg):
         """

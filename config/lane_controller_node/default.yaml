@@ -8,3 +8,9 @@ circle_pattern_width: 7
 target_dist: 0.05
 
 # Controller params
+distance_threshold: 0.1
+final_angle_threshold: 10.0
+
+# Vehicle params
+distance_wheel: 0.1
+wheel_radius: 0.0318
