@@ -1,25 +1,21 @@
 #!/usr/bin/env python3
-import numpy as np
-import rospy
 import os
-from duckietown.dtros import DTROS, NodeType, TopicType, DTParam, ParamType
-from duckietown_msgs.msg import Twist2DStamped, LanePose, WheelsCmdStamped, BoolStamped, FSMState, StopLineReading, \
-    WheelEncoderStamped
 
-from lane_controller.controller import PurePursuitLaneController
+import rospy
 from cv_bridge import CvBridge
+from duckietown.dtros import DTROS, DTParam, NodeType, ParamType, TopicType
+from duckietown_msgs.msg import Twist2DStamped, WheelEncoderStamped
 from image_geometry import PinholeCameraModel
-from sensor_msgs.msg import CompressedImage, Image, CameraInfo
-from visual_servo.estimation import PoseEstimator
-from visual_servo.control import Trajectory
-from visual_servo.config import (BUMPER_TO_CENTER_DIST, CAMERA_MODE, CIRCLE_MIN_AREA,
-                                 CIRCLE_MIN_DISTANCE, CIRCLE_PATTERN_HEIGHT,
-                                 CIRCLE_PATTERN_WIDTH, TARGET_DIST)
+from sensor_msgs.msg import CameraInfo, CompressedImage
+
+from lane_controller.control import Trajectory
+from lane_controller.estimation import PoseEstimator
 
 
 class LaneControllerNode(DTROS):
-    """Computes control action.
-    The node compute the commands in form of linear and angular velocitie.
+    """
+    Computes control action.
+    The node compute the commands in form of linear and angular velocities.
     The configuration parameters can be changed dynamically while the node is running via ``rosparam set`` commands.
     Args:
         node_name (:obj:`str`): a unique, descriptive name for the node that ROS will use
@@ -28,7 +24,10 @@ class LaneControllerNode(DTROS):
     Publisher:
         ~car_cmd (:obj:`Twist2DStamped`): The computed control action
     Subscribers:
-        ~lane_pose (:obj:`LanePose`): The lane pose estimate from the lane filter
+        /['VEHICLE_NAME']/camera_node/image/compressed (:obj:`CompressedImage`): The camera image
+        /['VEHICLE_NAME']/camera_node/camera_info (:obj:`CameraInfo`): The camera intrinsics parameters
+        /['VEHICLE_NAME']/left_wheel_encoder_node/tick (:obj:`WheelEncoderStamped`): The left wheel encoder ticks
+        /['VEHICLE_NAME']/right_wheel_encoder_node/tick (:obj:`WheelEncoderStamped`): The right wheel encoder ticks
     """
 
     def __init__(self, node_name):
@@ -39,8 +38,6 @@ class LaneControllerNode(DTROS):
         )
 
         # Add the node parameters to the parameters dictionary
-        self.params = dict()
-        self.pp_controller = PurePursuitLaneController(self.params)
 
         # Construct publishers
         self.pub_car_cmd = rospy.Publisher("~car_cmd",
@@ -49,7 +46,6 @@ class LaneControllerNode(DTROS):
                                            dt_topic_type=TopicType.CONTROL)
 
         # Construct subscribers
-
         self.sub_image = rospy.Subscriber(f"/{os.environ['VEHICLE_NAME']}/camera_node/image/compressed",
                                           CompressedImage, self.cb_image, queue_size=1)
 
@@ -58,16 +54,13 @@ class LaneControllerNode(DTROS):
 
         self.sub_encoder_left = rospy.Subscriber(f"/{os.environ['VEHICLE_NAME']}/left_wheel_encoder_node/tick",
                                                  WheelEncoderStamped,
-                                                 self.cbProcessLeftEncoder,
+                                                 self.cb_process_left_encoder,
                                                  queue_size=1)
 
         self.sub_encoder_right = rospy.Subscriber(f"/{os.environ['VEHICLE_NAME']}/right_wheel_encoder_node/tick",
                                                   WheelEncoderStamped,
-                                                  self.cbProcessRightEncoder,
+                                                  self.cb_process_right_encoder,
                                                   queue_size=1)
-        self.log("Initialized!")
-
-
         self.right_encoder_ticks = 0
         self.left_encoder_ticks = 0
         self.right_encoder_ticks_delta = 0
@@ -76,43 +69,45 @@ class LaneControllerNode(DTROS):
         # Set up a timer for prediction (if we got encoder data) since that data can come very quickly
         self._predict_freq = rospy.get_param('~predict_frequency', 30.0)
 
-        rospy.Timer(rospy.Duration(1 / self._predict_freq), self.cbPredict)
+        rospy.Timer(rospy.Duration(1 / self._predict_freq), self.cb_predict)
 
         self.bridge = CvBridge()
 
-        self.last_stamp = rospy.Time.now()
-
         self.pcm = PinholeCameraModel()
-        self.pose_estimator = PoseEstimator(min_area=CIRCLE_MIN_AREA,
-                                            min_dist_between_blobs=CIRCLE_MIN_DISTANCE,
-                                            height=CIRCLE_PATTERN_HEIGHT,
-                                            width=CIRCLE_PATTERN_WIDTH,
-                                            target_distance=TARGET_DIST,
-                                            camera_mode=CAMERA_MODE,
+
+        self.pose_estimator = PoseEstimator(height=rospy.get_param("~circle_pattern_height"),
+                                            width=rospy.get_param("~circle_pattern_width"),
+                                            target_distance=rospy.get_param("~target_dist"),
                                             )
-        self.trajectory = Trajectory()
 
-    def cbProcessLeftEncoder(self, left_encoder_msg):
-        """
-        Calculate the number of ticks since the last time
-        """
+        self.trajectory = Trajectory(distance_threshold= rospy.get_param("~distance_threshold"),
+                                     final_angle_threshold = rospy.get_param("~final_angle_threshold"),
+                                     distance_wheel = rospy.get_param("~distance_wheel"),
+                                     wheel_radius = rospy.get_param("~wheel_radius"),
+                                     target_dist = rospy.get_param("~target_dist"))
 
+    def cb_process_left_encoder(self, left_encoder_msg):
+        """
+        Update the number of left wheel ticks since the last trajectory update
+
+        Args:
+            left_encoder_msg (:obj:`WheelEncoderStamped`): message sent from left wheel encoder
+        """
         self.left_encoder_ticks_delta = left_encoder_msg.data - self.left_encoder_ticks
 
-    def cbProcessRightEncoder(self, right_encoder_msg):
+    def cb_process_right_encoder(self, right_encoder_msg):
         """
-        Calculate the number of ticks since the last time
-        """
+        Update the number of right wheel ticks since the last trajectory update
 
+        Args:
+            right_encoder_msg (:obj:`WheelEncoderStamped`): message sent from right wheel encoder
+        """
         self.right_encoder_ticks_delta = right_encoder_msg.data - self.right_encoder_ticks
 
-    def cbPredict(self, event):
+    def cb_predict(self, event):
         """
         Predict the pose of the duckiebot since the last detection with the encoder data.
         """
-
-
-
         # first let's check if we moved at all, if not abort
         if self.right_encoder_ticks_delta == 0 and self.left_encoder_ticks_delta == 0:
             return
@@ -127,10 +122,9 @@ class LaneControllerNode(DTROS):
 
     def cb_process_camera_info(self, msg):
         """
-        Callback that stores the intrinsic calibration into a PinholeCameraModel object.
+        Store the intrinsic calibration into a PinholeCameraModel object.
 
         Args:
-
             msg (:obj:`sensor_msgs.msg.CameraInfo`): Intrinsic properties of the camera.
         """
         if not self.pose_estimator.initialized:
@@ -139,23 +133,17 @@ class LaneControllerNode(DTROS):
 
     def cb_image(self, image_msg):
         """
-        From the image, the function estimate the pose of the duckiebot and send the
-        commands to follow the trajectory.
+        Estimate the pose of the duckiebot and send the commands to follow the trajectory.
+
+        Args:
+            image_msg (:obj:`CompressedImage`): Camera message containing compressed image
         """
-
-        now = rospy.Time.now()
-
-        dt = (now - self.last_stamp).to_sec()
-
-        self.last_stamp = now
-
         if self.pose_estimator.initialized:
             image_cv = self.bridge.compressed_imgmsg_to_cv2(image_msg, "bgr8")
 
             target_detected, estimated_pose = self.pose_estimator.get_pose(image_cv)
 
-
-
+            # Update the pose if the target is detected
             if target_detected:
                 self.trajectory.update(estimated_pose)
                 self.left_encoder_ticks_delta = 0
@@ -164,6 +152,7 @@ class LaneControllerNode(DTROS):
             v = 0
             w = 0
 
+            # Get commands from current estimate if pattern has been seen at least once
             if self.trajectory.is_initialized():
                 v, w = self.trajectory.get_commands()
             car_control_msg = Twist2DStamped()
@@ -171,20 +160,16 @@ class LaneControllerNode(DTROS):
             car_control_msg.v = v
             car_control_msg.omega = w
 
-            self.publishCmd(car_control_msg)
+            self.publish_cmd(car_control_msg)
 
-    def publishCmd(self, car_cmd_msg):
-        """Publishes a car command message.
+    def publish_cmd(self, car_cmd_msg):
+        """
+        Publish a car command message.
 
         Args:
             car_cmd_msg (:obj:`Twist2DStamped`): Message containing the requested control action.
         """
         self.pub_car_cmd.publish(car_cmd_msg)
-
-    def cbParametersChanged(self):
-        """Updates parameters in the controller object."""
-
-        self.controller.update_parameters(self.params)
 
 
 if __name__ == "__main__":

@@ -13,22 +13,17 @@ class PoseEstimator:
     """
 
     def __init__(self,
-                 min_area: int,
-                 min_dist_between_blobs: int,
                  height: int,
                  width: int,
-                 target_distance: float,
-                 camera_mode: int):
+                 target_distance: float
+                 ):
 
         """
         Initialize PoseEstimator
         Args:
-            min_area: minimum area of blob to be detected
-            min_dist_between_blobs: minimum space between blob
             height: number of rows in circle pattern
             width: number of columns in circle pattern
             target_distance: target goal to bumper
-            camera_mode: int from 0 to 3, temp solution for debugging
         """
         params = cv2.SimpleBlobDetector_Params()
         self.detector = cv2.SimpleBlobDetector_create(params)
@@ -38,7 +33,6 @@ class PoseEstimator:
         self.target_distance = target_distance
         self.camera_matrix = None
         self.distortion_coefs = None
-        self.camera_mode = camera_mode
         self.initialized = False
 
     def initialize_camera_matrix(self, camera_matrix, distortion_coefs):
@@ -59,13 +53,13 @@ class PoseEstimator:
             a bool (True if pattern is detected), and a tuple([y, z, x], theta)
         """
 
-        #Detect the circles pattern
+        # Detect the circles pattern
         detection, centers = cv2.findCirclesGrid(obs,
                                                  patternSize=(self.width, self.height),
                                                  flags=cv2.CALIB_CB_SYMMETRIC_GRID,
                                                  blobDetector=self.detector)
 
-        #Estimate the pose from the circle pattern position
+        # Estimate the pose from the circle pattern position
         if detection:
             image_points = centers[:, 0, :]
             _, rotation_vector, translation_vector = cv2.solvePnP(objectPoints=self.circle_pattern,
@@ -81,7 +75,7 @@ class PoseEstimator:
         y_global = translation_vector[0][0]
         z_global = translation_vector[1][0]
 
-        #We want to park behind the duckiebot at a distance target_distance
+        # We want to park behind the duckiebot at a distance target_distance
 
         x_but_global = x_global - self.target_distance
         y_but_global = y_global
