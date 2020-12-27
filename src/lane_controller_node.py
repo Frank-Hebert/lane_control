@@ -6,11 +6,10 @@ from cv_bridge import CvBridge
 from duckietown.dtros import DTROS, DTParam, NodeType, ParamType, TopicType
 from duckietown_msgs.msg import Twist2DStamped, WheelEncoderStamped
 from image_geometry import PinholeCameraModel
-from lane_controller.controller import PurePursuitLaneController
 from sensor_msgs.msg import CameraInfo, CompressedImage
 
-from visual_servo.control import Trajectory
-from visual_servo.estimation import PoseEstimator
+from lane_controller.control import Trajectory
+from lane_controller.estimation import PoseEstimator
 
 
 class LaneControllerNode(DTROS):
