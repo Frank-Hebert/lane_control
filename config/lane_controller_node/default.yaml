@@ -1,3 +1,10 @@
 #lane_control/lane_controller_node
 
 ## ADD CONFIGS HERE
+
+# Estimator params
+circle_pattern_height: 3
+circle_pattern_width: 7
+target_dist: 0.05
+
+# Controller params

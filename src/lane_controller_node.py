@@ -6,11 +6,8 @@ from cv_bridge import CvBridge
 from duckietown.dtros import DTROS, DTParam, NodeType, ParamType, TopicType
 from duckietown_msgs.msg import Twist2DStamped, WheelEncoderStamped
 from image_geometry import PinholeCameraModel
-from lane_controller.controller import PurePursuitLaneController
 from sensor_msgs.msg import CameraInfo, CompressedImage
-from visual_servo.config import (CAMERA_MODE, CIRCLE_MIN_AREA,
-                                 CIRCLE_MIN_DISTANCE, CIRCLE_PATTERN_HEIGHT,
-                                 CIRCLE_PATTERN_WIDTH, TARGET_DIST)
+
 from visual_servo.control import Trajectory
 from visual_servo.estimation import PoseEstimator
 
@@ -41,8 +38,6 @@ class LaneControllerNode(DTROS):
         )
 
         # Add the node parameters to the parameters dictionary
-        self.params = dict()
-        self.pp_controller = PurePursuitLaneController(self.params)
 
         # Construct publishers
         self.pub_car_cmd = rospy.Publisher("~car_cmd",
@@ -79,12 +74,10 @@ class LaneControllerNode(DTROS):
         self.bridge = CvBridge()
 
         self.pcm = PinholeCameraModel()
-        self.pose_estimator = PoseEstimator(min_area=CIRCLE_MIN_AREA,
-                                            min_dist_between_blobs=CIRCLE_MIN_DISTANCE,
-                                            height=CIRCLE_PATTERN_HEIGHT,
-                                            width=CIRCLE_PATTERN_WIDTH,
-                                            target_distance=TARGET_DIST,
-                                            camera_mode=CAMERA_MODE,
+
+        self.pose_estimator = PoseEstimator(height=rospy.get_param("~circle_pattern_height"),
+                                            width=rospy.get_param("~circle_pattern_width"),
+                                            target_distance=rospy.get_param("~target_dist"),
                                             )
         self.trajectory = Trajectory()
 
